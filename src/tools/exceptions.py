@@ -15,3 +15,8 @@ class ToolError(Exception):
             "message": self.message,
             **self.context
         }
+
+
+class SecurityError(ToolError):
+    """Raised when security validation fails."""
+    pass
