@@ -1,11 +1,24 @@
 import time
+import os
+from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from src.utils.logger import log_experiment, ActionType # MANDATORY IMPORT
 from src.tools import write_file, run_pylint, run_pytest
 
+load_dotenv()
+
+# Ensure GOOGLE_API_KEY is set
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+if not GOOGLE_API_KEY:
+    raise RuntimeError("Missing GOOGLE_API_KEY environment variable. Set GOOGLE_API_KEY and retry.")
+
 # Model
-llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite", temperature=0)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.0-flash-lite",
+    temperature=0,
+    google_api_key=GOOGLE_API_KEY,
+)
 
 def clean_code(text: str) -> str:
     if "```" in text:

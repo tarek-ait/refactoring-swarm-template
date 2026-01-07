@@ -7,7 +7,7 @@ from enum import Enum
 # Chemin du fichier de logs
 LOG_FILE = os.path.join("logs", "experiment_data.json")
 
-class ActionType(str, Enum):
+class ActionType(Enum):
     """
     Énumération des types d'actions possibles pour standardiser l'analyse.
     """
@@ -15,17 +15,18 @@ class ActionType(str, Enum):
     GENERATION = "CODE_GEN"     # Création de nouveau code/tests/docs
     DEBUG = "DEBUG"             # Analyse d'erreurs d'exécution
     FIX = "FIX"                 # Application de correctifs
+    STARTUP = "STARTUP"
 
-def log_experiment(agent_name: str, model_used: str, action: ActionType, details: dict, status: str):
+def log_experiment(action: ActionType, details: dict, status: str, agent_name: str = "Unknown", model_used: str = "Unknown"):
     """
     Enregistre une interaction d'agent pour l'analyse scientifique.
 
     Args:
-        agent_name (str): Nom de l'agent (ex: "Auditor", "Fixer").
-        model_used (str): Modèle LLM utilisé (ex: "gemini-1.5-flash").
         action (ActionType): Le type d'action effectué (utiliser l'Enum ActionType).
         details (dict): Dictionnaire contenant les détails. DOIT contenir 'input_prompt' et 'output_response'.
         status (str): "SUCCESS" ou "FAILURE".
+        agent_name (str, optional): Nom de l'agent (ex: "Auditor", "Fixer"). Par défaut "Unknown".
+        model_used (str, optional): Modèle LLM utilisé (ex: "gemini-1.5-flash"). Par défaut "Unknown".
 
     Raises:
         ValueError: Si les champs obligatoires sont manquants dans 'details' ou si l'action est invalide.

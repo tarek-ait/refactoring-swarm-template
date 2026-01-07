@@ -1,11 +1,44 @@
 [
-  {
-    "id": "9e82e9b0-9b43-4a78-af43-d5d5ef848a2f",
-    "timestamp": "2025-12-26T01:26:41.177789",
-    "agent": "System",
-    "model": "unknown",
-    "action": "STARTUP",
-    "details": "Target: ./sandbox",
-    "status": "INFO"
-  }
+    {
+        "id": "9e82e9b0-9b43-4a78-af43-d5d5ef848a2f",
+        "timestamp": "2025-12-26T01:26:41.177789",
+        "agent": "System",
+        "model": "unknown",
+        "action": "STARTUP",
+        "details": "Target: ./sandbox",
+        "status": "INFO"
+    },
+    {
+        "id": "0c9217a1-3c8a-482c-9e65-f6a091cab059",
+        "timestamp": "2026-01-07T13:57:17.933837",
+        "agent": "System",
+        "model": "System",
+        "action": "STARTUP",
+        "details": {
+            "target": "./sandbox"
+        },
+        "status": "INFO"
+    },
+    {
+        "id": "751615b4-2a81-40c3-8db7-13339b38b55b",
+        "timestamp": "2026-01-07T13:59:26.887446",
+        "agent": "System",
+        "model": "System",
+        "action": "STARTUP",
+        "details": {
+            "target": "./sandbox"
+        },
+        "status": "INFO"
+    },
+    {
+        "id": "c3de13b8-c56f-4d44-87f8-371d4addcb8d",
+        "timestamp": "2026-01-07T14:01:16.164354",
+        "agent": "System",
+        "model": "System",
+        "action": "STARTUP",
+        "details": {
+            "target": "./sandbox"
+        },
+        "status": "INFO"
+    }
 ]

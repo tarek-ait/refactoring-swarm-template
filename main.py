@@ -4,6 +4,7 @@ import os
 import glob
 from dotenv import load_dotenv
 from src.utils.logger import log_experiment, ActionType
+
 from src.graph import app
 from src.tools import read_file
 
@@ -21,7 +22,7 @@ def main():
         sys.exit(1)
 
     print(f"🚀 DEMARRAGE SUR : {target_dir}")
-    log_experiment("System", "STARTUP", "System", {"target": target_dir}, "INFO")
+    log_experiment(ActionType.STARTUP, {"target": target_dir}, "INFO", "System", "System")
 
     # Identifying Files (Assumes structure: program.py and test_program.py)
     # For this lab, we look for pairs of .py files and their tests.
