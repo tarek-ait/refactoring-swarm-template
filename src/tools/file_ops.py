@@ -234,3 +234,258 @@ class FileOperations:
                 error=f"Write failed: {type(e).__name__}: {str(e)}"
             )
     
+    def create_backup(self, filepath: Union[str, Path]) -> FileOperationResult:
+        """Create a backup copy of a file.
+        
+        Backup filename format: original_name.bak.TIMESTAMP
+        
+        Args:
+            filepath: Path to file to backup
+            
+        Returns:
+            FileOperationResult with backup path in metadata
+            
+        Example:
+            >>> result = file_ops.create_backup("important.py")
+            >>> print(result.metadata["backup_path"])
+            /sandbox/important.py.bak.20260109_143022
+        """
+        try:
+            # Validate path
+            safe_path = self._sandbox.validate_path(filepath)
+            
+            # Check file exists
+            if not safe_path.exists():
+                return FileOperationResult(
+                    success=False,
+                    filepath=str(safe_path),
+                    error="Cannot backup: file does not exist"
+                )
+            
+            # Generate backup filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = safe_path.with_suffix(f"{safe_path.suffix}.bak.{timestamp}")
+            
+            # Copy file
+            shutil.copy2(safe_path, backup_path)
+            
+            return FileOperationResult(
+                success=True,
+                filepath=str(safe_path),
+                metadata={
+                    "backup_path": str(backup_path),
+                    "timestamp": timestamp
+                }
+            )
+            
+        except Exception as e:
+            return FileOperationResult(
+                success=False,
+                filepath=str(filepath),
+                error=f"Backup failed: {type(e).__name__}: {str(e)}"
+            )
+    
+    def list_python_files(self, directory: Optional[Union[str, Path]] = None) -> FileOperationResult:
+        """List all Python files in a directory (recursively).
+        
+        Args:
+            directory: Directory to search (defaults to sandbox root)
+            
+        Returns:
+            FileOperationResult with list of file paths in metadata
+            
+        Example:
+            >>> result = file_ops.list_python_files()
+            >>> for filepath in result.metadata["files"]:
+            ...     print(filepath)
+        """
+        try:
+            if directory:
+                search_dir = self._sandbox.validate_path(directory)
+            else:
+                search_dir = self._sandbox.sandbox_root
+            
+            # Find all .py files
+            python_files = sorted([str(f) for f in search_dir.rglob("*.py")])
+            
+            return FileOperationResult(
+                success=True,
+                filepath=str(search_dir),
+                metadata={
+                    "files": python_files,
+                    "count": len(python_files)
+                }
+            )
+            
+        except Exception as e:
+            return FileOperationResult(
+                success=False,
+                filepath=str(directory) if directory else "sandbox root",
+                error=f"List failed: {type(e).__name__}: {str(e)}"
+            )
+    
+    def file_exists(self, filepath: Union[str, Path]) -> bool:
+        """Check if a file exists within the sandbox.
+        
+        Args:
+            filepath: Path to check
+            
+        Returns:
+            True if file exists, False otherwise
+        """
+        try:
+            safe_path = self._sandbox.validate_path(filepath)
+            return safe_path.exists() and safe_path.is_file()
+        except:
+            return False
+    
+    def get_file_info(self, filepath: Union[str, Path]) -> FileOperationResult:
+        """Get detailed information about a file.
+        
+        Args:
+            filepath: Path to file
+            
+        Returns:
+            FileOperationResult with file metadata
+            
+        Example:
+            >>> result = file_ops.get_file_info("code.py")
+            >>> print(result.metadata)
+            {'size_bytes': 1234, 'modified': '2026-01-09T14:30:22', ...}
+        """
+        try:
+            safe_path = self._sandbox.validate_path(filepath)
+            
+            if not safe_path.exists():
+                return FileOperationResult(
+                    success=False,
+                    filepath=str(safe_path),
+                    error="File not found"
+                )
+            
+            stat = safe_path.stat()
+            metadata = {
+                "exists": True,
+                "is_file": safe_path.is_file(),
+                "is_directory": safe_path.is_dir(),
+                "size_bytes": stat.st_size,
+                "created_time": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                "modified_time": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                "extension": safe_path.suffix,
+                "filename": safe_path.name
+            }
+            
+            return FileOperationResult(
+                success=True,
+                filepath=str(safe_path),
+                metadata=metadata
+            )
+            
+        except Exception as e:
+            return FileOperationResult(
+                success=False,
+                filepath=str(filepath),
+                error=f"Failed to get file info: {str(e)}"
+            )
+    
+    def delete_file(self, filepath: Union[str, Path], 
+                    create_backup: bool = True) -> FileOperationResult:
+        """Delete a file (with optional backup).
+        
+        Args:
+            filepath: Path to file to delete
+            create_backup: Whether to create backup before deletion
+            
+        Returns:
+            FileOperationResult with deletion status
+        """
+        try:
+            safe_path = self._sandbox.validate_path(filepath)
+            
+            if not safe_path.exists():
+                return FileOperationResult(
+                    success=False,
+                    filepath=str(safe_path),
+                    error="File not found"
+                )
+            
+            # Create backup if requested
+            backup_path = None
+            if create_backup:
+                backup_result = self.create_backup(safe_path)
+                if backup_result.success:
+                    backup_path = backup_result.metadata.get("backup_path")
+            
+            # Delete the file
+            safe_path.unlink()
+            
+            return FileOperationResult(
+                success=True,
+                filepath=str(safe_path),
+                metadata={
+                    "deleted": True,
+                    "backup_created": backup_path is not None,
+                    "backup_path": backup_path
+                }
+            )
+            
+        except Exception as e:
+            return FileOperationResult(
+                success=False,
+                filepath=str(filepath),
+                error=f"Delete failed: {str(e)}"
+            )
+
+
+# Module-level convenience functions (use global sandbox)
+def read_file(filepath: Union[str, Path], 
+              sandbox: Optional[SandboxManager] = None) -> FileOperationResult:
+    """Convenience function to read a file.
+    
+    Args:
+        filepath: Path to file
+        sandbox: Optional SandboxManager (uses global if None)
+        
+    Returns:
+        FileOperationResult
+    """
+    from .sandbox import get_sandbox
+    sandbox = sandbox or get_sandbox()
+    file_ops = FileOperations(sandbox)
+    return file_ops.read_file(filepath)
+
+
+def write_file(filepath: Union[str, Path], content: str,
+               sandbox: Optional[SandboxManager] = None) -> FileOperationResult:
+    """Convenience function to write a file.
+    
+    Args:
+        filepath: Path to file
+        content: Content to write
+        sandbox: Optional SandboxManager (uses global if None)
+        
+    Returns:
+        FileOperationResult
+    """
+    from .sandbox import get_sandbox
+    sandbox = sandbox or get_sandbox()
+    file_ops = FileOperations(sandbox)
+    return file_ops.write_file(filepath, content)
+
+
+def list_python_files(directory: Optional[Union[str, Path]] = None,
+                      sandbox: Optional[SandboxManager] = None) -> List[str]:
+    """Convenience function to list Python files.
+    
+    Args:
+        directory: Directory to search (defaults to sandbox root)
+        sandbox: Optional SandboxManager (uses global if None)
+        
+    Returns:
+        List of file paths
+    """
+    from .sandbox import get_sandbox
+    sandbox = sandbox or get_sandbox()
+    file_ops = FileOperations(sandbox)
+    result = file_ops.list_python_files(directory)
+    return result.metadata.get("files", []) if result.success else []
