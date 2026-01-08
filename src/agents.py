@@ -1,40 +1,52 @@
-import time
 import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
-from src.utils.logger import log_experiment, ActionType # MANDATORY IMPORT
+import time
+from mistralai import Mistral
+from src.utils.logger import log_experiment, ActionType
 from src.tools import write_file, run_pylint, run_pytest
 
-load_dotenv()
+# --- MISTRAL SETUP ---
+api_key = os.environ.get("MISTRAL_API_KEY")
+agent_id = os.environ.get("MISTRAL_AGENT_ID")
 
-# Ensure GOOGLE_API_KEY is set
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    raise RuntimeError("Missing GOOGLE_API_KEY environment variable. Set GOOGLE_API_KEY and retry.")
+if not api_key or not agent_id:
+    raise ValueError("❌ Missing MISTRAL_API_KEY or MISTRAL_AGENT_ID in .env")
 
-# Model
-llm = ChatGoogleGenerativeAI(
-    model="gemini-2.0-flash-lite",
-    temperature=0,
-    google_api_key=GOOGLE_API_KEY,
-)
+client = Mistral(api_key=api_key)
+
+def call_mistral_agent(prompt: str) -> str:
+    """Helper to call the specific Mistral Agent."""
+    try:
+        response = client.agents.complete(
+            agent_id=agent_id,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Mistral API Error: {str(e)}"
 
 def clean_code(text: str) -> str:
+    """Extracts code from Markdown blocks if present."""
     if "```" in text:
-        return text.split("```")[1].replace("python", "").strip()
+        # Split by ``` and take the second part (the code)
+        # Handles ```python and just ```
+        parts = text.split("```")
+        if len(parts) >= 2:
+            return parts[1].replace("python", "").replace("python", "").strip()
     return text.strip()
 
-# AGENT 1: THE AUDITOR (Static Analysis)
+# --- AGENT 1: THE AUDITOR (Static Analysis) ---
 def auditor_agent(state):
     print(f"\n🧐 AUDITOR: Analyzing {state['target_file']}...")
     
-    # Tool Execution
+    # 1. Tool Execution
     lint_report = run_pylint(state["target_file"])
     
-    # LLM Analysis
+    # 2. Mistral Analysis
     prompt = f"""
-    You are a Python Code Auditor. Analyze this code and the Pylint report.
+    Analyze this code and the Pylint report.
+    
     CODE:
     {state['code_content']}
     
@@ -44,12 +56,12 @@ def auditor_agent(state):
     Provide a concise refactoring plan to fix errors and improve quality.
     """
     
-    response = llm.invoke(prompt).content
+    response = call_mistral_agent(prompt)
     
-    # MANDATORY LOGGING
+    # 3. Logging
     log_experiment(
         agent_name="Auditor",
-        model_used="gemini-2.0-flash-lite",
+        model_used=agent_id, # Log the specific Agent ID
         action=ActionType.ANALYSIS,
         details={
             "input_prompt": prompt,
@@ -61,13 +73,13 @@ def auditor_agent(state):
     
     return {"pylint_report": response}
 
-# AGENT 2: THE FIXER (Refactoring)
+# --- AGENT 2: THE FIXER (Refactoring) ---
 def fixer_agent(state):
     print(f"\n🔧 FIXER: Applying corrections (Iter {state['iteration']})...")
     
-    # LLM Generation
+    # 1. Mistral Generation
     prompt = f"""
-    You are a Senior Python Developer. Fix the code based on the Auditor's plan and the Test failures.
+    Fix the code based on the Auditor's plan and the Test failures.
     
     ORIGINAL CODE:
     {state['code_content']}
@@ -75,22 +87,22 @@ def fixer_agent(state):
     AUDITOR PLAN:
     {state['pylint_report']}
     
-    TEST FAILURES (if any):
+    TEST FAILURES:
     {state.get('test_report', 'None yet')}
     
     Output ONLY the full fixed Python code inside markdown blocks.
     """
     
-    response = llm.invoke(prompt).content
+    response = call_mistral_agent(prompt)
     fixed_code = clean_code(response)
     
-    # Apply Fix (Toolsmith)
+    # 2. Apply Fix
     write_file(state["target_file"], fixed_code)
     
-    # MANDATORY LOGGING
+    # 3. Logging
     log_experiment(
         agent_name="Fixer",
-        model_used="gemini-2.0-flash-lite",
+        model_used=agent_id,
         action=ActionType.FIX,
         details={
             "input_prompt": prompt,
@@ -102,14 +114,13 @@ def fixer_agent(state):
     
     return {"code_content": fixed_code, "iteration": state["iteration"] + 1}
 
-# AGENT 3: THE JUDGE (Testing)
+# --- AGENT 3: THE JUDGE (Testing) ---
+# The Judge uses Pytest, so it remains independent of the LLM.
 def judge_agent(state):
     print(f"\n⚖️ JUDGE: Running tests on {state['test_file']}...")
     
-    # Run Tests
     test_result = run_pytest(state["test_file"])
     
-    # MANDATORY LOGGING
     log_experiment(
         agent_name="Judge",
         model_used="System-Pytest",
