@@ -216,3 +216,61 @@ class CodeParser:
         """
         try:
             tree = self.parse_file(filepath)
+            if tree is None:
+                return []
+            
+            functions: List[FunctionInfo] = []
+            
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+                    # Extract parameters
+                    params = [arg.arg for arg in node.args.args]
+                    
+                    # Check for docstring
+                    has_docstring = (
+                        len(node.body) > 0 and
+                        isinstance(node.body[0], ast.Expr) and
+                        isinstance(node.body[0].value, ast.Constant) and
+                        isinstance(node.body[0].value.value, str)
+                    )
+                    
+                    # Extract decorators
+                    decorators = []
+                    for dec in node.decorator_list:
+                        if isinstance(dec, ast.Name):
+                            decorators.append(dec.id)
+                        elif isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name):
+                            decorators.append(dec.func.id)
+                    
+                    func_info = FunctionInfo(
+                        name=node.name,
+                        line_number=node.lineno,
+                        parameters=params,
+                        has_docstring=has_docstring,
+                        is_async=isinstance(node, ast.AsyncFunctionDef),
+                        decorators=decorators
+                    )
+                    functions.append(func_info)
+            
+            return functions
+            
+        except ParsingError:
+            raise
+        except Exception as e:
+            raise ParsingError(f"Failed to extract functions: {str(e)}")
+    
+    def extract_classes(self, filepath: Union[str, Path]) -> List[ClassInfo]:
+        """Extract all class definitions from a file.
+        
+        Args:
+            filepath: Path to Python file
+            
+        Returns:
+            List of ClassInfo objects
+            
+        Example:
+            >>> classes = parser.extract_classes("code.py")
+            >>> for cls in classes:
+            ...     print(f"Class {cls.name} with {len(cls.methods)} methods")
+        """
+        try:
