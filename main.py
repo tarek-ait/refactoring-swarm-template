@@ -3,12 +3,13 @@ import sys
 import os
 import glob
 from dotenv import load_dotenv
-from src.utils.logger import log_experiment, ActionType
 
+# Loading .env first
+load_dotenv()
+
+from src.utils.logger import log_experiment, ActionType
 from src.graph import app
 from src.tools import read_file
-
-load_dotenv()
 
 def main():
     # Argument Parsing (REQUIRED by Lab Statement)
