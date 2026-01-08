@@ -33,8 +33,8 @@ def main():
         
         test_file = os.path.join(os.path.dirname(py_file), "test_" + os.path.basename(py_file))
         if not os.path.exists(test_file):
-             # Trying alternate naming convention
-             test_file = os.path.join(os.path.dirname(py_file), "tests.py")
+            # Trying alternate naming convention
+            test_file = os.path.join(os.path.dirname(py_file), "tests.py")
         
         if not os.path.exists(test_file):
             print(f"⚠️ No test found for {py_file}. Skipping.")
@@ -60,7 +60,7 @@ def main():
             print(f"✅ Finished processing {py_file}")
         except Exception as e:
             print(f"❌ Critical Error on {py_file}: {e}")
-            log_experiment("System", "ERROR", ActionType.DEBUG, {"error": str(e)}, "FAILURE")
+            log_experiment(ActionType.DEBUG, {"error": str(e)}, "FAILURE", "System", "Unknown")
 
     print("✅ MISSION_COMPLETE")
 

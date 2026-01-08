@@ -40,5 +40,27 @@
             "target": "./sandbox"
         },
         "status": "INFO"
+    },
+    {
+        "id": "376c9136-7058-4f9d-935e-352faaafc03a",
+        "timestamp": "2026-01-08T09:21:59.691092",
+        "agent": "System",
+        "model": "System",
+        "action": "STARTUP",
+        "details": {
+            "target": "./sandbox"
+        },
+        "status": "INFO"
+    },
+    {
+        "id": "44fe040b-2124-4cf0-b4e4-ad8b451b9a8d",
+        "timestamp": "2026-01-08T09:57:01.283874",
+        "agent": "System",
+        "model": "System",
+        "action": "STARTUP",
+        "details": {
+            "target": "./sandbox"
+        },
+        "status": "INFO"
     }
 ]
