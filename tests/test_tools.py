@@ -116,3 +116,38 @@ class TestSandboxSecurity:
         with pytest.raises(SecurityError):
             sandbox.validate_path("../../etc/passwd")
     
+    def test_absolute_path_outside_blocked(self, sandbox):
+        """Test that absolute paths outside sandbox are blocked."""
+        with pytest.raises(SecurityError):
+            sandbox.validate_path("/etc/passwd")
+    
+    def test_relative_path_allowed(self, sandbox, temp_sandbox):
+        """Test that relative paths within sandbox are allowed."""
+        safe_path = sandbox.validate_path("code.py")
+        assert str(safe_path).startswith(str(temp_sandbox))
+    
+    def test_is_safe_method(self, sandbox):
+        """Test the is_safe convenience method."""
+        assert sandbox.is_safe("code.py") is True
+        assert sandbox.is_safe("../../etc/passwd") is False
+    
+    def test_get_safe_path(self, sandbox, temp_sandbox):
+        """Test get_safe_path method."""
+        safe_path = sandbox.get_safe_path("subfolder/code.py")
+        expected = Path(temp_sandbox) / "subfolder" / "code.py"
+        assert safe_path == expected.resolve()
+    
+    def test_list_python_files(self, sandbox, sample_python_file):
+        """Test listing Python files."""
+        files = sandbox.list_python_files()
+        assert len(files) > 0
+        assert any(f.name == "sample.py" for f in files)
+
+
+# ============================================================================
+# FILE OPERATIONS TESTS
+# ============================================================================
+
+class TestFileOperations:
+    """Test file operation functionality."""
+    
