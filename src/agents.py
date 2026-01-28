@@ -1,12 +1,14 @@
-
 import os
+import re
+import tempfile
+from pathlib import Path
 from dotenv import load_dotenv
 from mistralai import Mistral
 
 from src.tools import (
     run_pylint,
-    get_quality_score,
     run_pytest,
+    initialize_sandbox,
 )
 from src.utils.logger import log_experiment, ActionType
 
@@ -14,7 +16,13 @@ from src.utils.logger import log_experiment, ActionType
 load_dotenv()
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-MODEL_NAME = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
+MISTRAL_AGENT_ID = os.getenv("MISTRAL_MODEL")  # This is actually the Agent ID
+
+if not MISTRAL_API_KEY:
+    raise ValueError("❌ Missing MISTRAL_API_KEY in .env")
+
+if not MISTRAL_AGENT_ID:
+    raise ValueError("❌ Missing MISTRAL_MODEL (Agent ID) in .env")
 
 # Initialize Mistral client
 client = Mistral(api_key=MISTRAL_API_KEY)
@@ -22,166 +30,307 @@ client = Mistral(api_key=MISTRAL_API_KEY)
 
 def _chat(system_prompt: str, user_prompt: str) -> str:
     """
-    Internal helper to query Mistral with a system + user prompt.
+    Internal helper to query Mistral Agent with a combined prompt.
+    Uses the Agents API instead of Chat API.
     """
-    response = client.chat.complete(
-        model=MODEL_NAME,
+    # Combine system and user prompts for the agent
+    combined_prompt = f"{system_prompt}\n\n---\n\n{user_prompt}"
+    
+    response = client.agents.complete(
+        agent_id=MISTRAL_AGENT_ID,
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
+            {"role": "user", "content": combined_prompt},
         ],
-        temperature=0.2,
     )
     return response.choices[0].message.content.strip()
 
 
-def auditor_agent(code: str, task_description: str) -> dict:
+def _extract_code_from_response(response: str) -> str:
     """
-    Analyzes code using static analysis tools and returns issues and score.
+    Extract Python code from LLM response, handling markdown code blocks.
     """
-    # Write code to a temp file in sandbox for analysis
-    import tempfile
-    from pathlib import Path
-    from src.tools import initialize_sandbox
+    # Try to find code in ```python ... ``` blocks
+    pattern = r"```python\s*(.*?)\s*```"
+    matches = re.findall(pattern, response, re.DOTALL)
+    if matches:
+        return matches[0].strip()
+    
+    # Try to find code in ``` ... ``` blocks
+    pattern = r"```\s*(.*?)\s*```"
+    matches = re.findall(pattern, response, re.DOTALL)
+    if matches:
+        return matches[0].strip()
+    
+    # If no code blocks, return the response as-is (might be raw code)
+    return response.strip()
+
+
+def auditor_agent(state: dict) -> dict:
+    """
+    Analyzes code using static analysis (pylint) and runs tests.
+    LangGraph node function - receives and returns state dict.
+    """
+    # Extract from state
+    code = state.get("code_content", "")
+    test_file = state.get("test_file", "")
+    task_description = state.get("task_description", "Analyze code for bugs and quality issues")
 
     sandbox = initialize_sandbox("./sandbox")
+    
+    # Write code to temp file for analysis
     with tempfile.NamedTemporaryFile(delete=False, suffix=".py", dir="./sandbox") as tmp:
         tmp.write(code.encode("utf-8"))
         tmp_path = Path(tmp.name)
 
+    # Run pylint analysis
     analysis = run_pylint(tmp_path, sandbox)
-    os.unlink(tmp_path)
     
-    # Log the auditor action
+    # Run tests to find logical bugs
+    test_result = None
+    if test_file and os.path.exists(test_file):
+        test_result = run_pytest(Path(test_file), sandbox)
+    
+    # Clean up temp file
+    try:
+        os.unlink(tmp_path)
+    except:
+        pass
+    
+    # Build result for logging
+    pylint_issues = []
+    if analysis.success and analysis.issues:
+        pylint_issues = [issue.to_dict() for issue in analysis.issues]
+    
+    # Extract test information safely
+    test_passed = None
+    test_output = ""
+    test_errors = ""
+    
+    if test_result:
+        test_passed = test_result.all_tests_passed if test_result.success else False
+        # Get failed test info
+        if test_result.failed_tests:
+            test_errors = "\n".join([
+                f"FAILED: {ft.test_name} - {ft.error_message}" 
+                for ft in test_result.failed_tests
+            ])
+        test_output = str(test_result.stats) if test_result.stats else ""
+    
     result = {
-        "issues": [issue.to_dict() for issue in analysis.issues],
-        "score": analysis.score,
-        "success": analysis.success,
-        "error": analysis.error,
-        "metadata": analysis.metadata,
+        "pylint_issues": pylint_issues,
+        "pylint_score": analysis.score if analysis.success else 0.0,
+        "test_passed": test_passed,
+        "test_output": test_output,
+        "test_errors": test_errors,
     }
+    
+    # Determine status message
+    if test_passed is None:
+        test_status = "SKIPPED"
+    elif test_passed:
+        test_status = "PASSED"
+    else:
+        test_status = "FAILED"
     
     log_experiment(
         agent_name="Auditor",
-        model_used="pylint",
+        model_used=f"pylint+pytest (Agent: {MISTRAL_AGENT_ID})",
         action=ActionType.ANALYSIS,
         details={
             "input_prompt": f"Analyzing code for task: {task_description}",
-            "output_response": f"Found {len(result['issues'])} issues. Score: {result['score']}"
+            "output_response": f"Pylint: {len(pylint_issues)} issues, score: {analysis.score}. Tests: {test_status}"
         },
-        status="SUCCESS" if result["success"] else "FAILURE"
+        status="SUCCESS" if analysis.success else "FAILURE"
     )
     
-    return result
+    # Return state update
+    return {
+        "pylint_report": str(result),
+        "iteration": state.get("iteration", 0) + 1
+    }
 
 
-def fixer_agent(code: str, issues: list) -> str:
+def fixer_agent(state: dict) -> dict:
     """
-    Attempts to auto-fix code using tools in the tools folder.
-    Currently removes unused imports if detected by issues.
+    Uses Mistral Agent to fix logical bugs in code based on pylint report and test failures.
+    LangGraph node function - receives and returns state dict.
     """
-    import tempfile
-    from pathlib import Path
-    from src.tools import initialize_sandbox, read_file, write_file
+    # Extract from state
+    code = state.get("code_content", "")
+    pylint_report = state.get("pylint_report", "")
+    test_file = state.get("test_file", "")
+    
+    # Read test file content for context
+    test_content = ""
+    if test_file and os.path.exists(test_file):
+        try:
+            with open(test_file, "r") as f:
+                test_content = f.read()
+        except Exception:
+            pass
 
-    sandbox = initialize_sandbox("./sandbox")
-    # Write code to temp file in sandbox
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".py", dir="./sandbox") as tmp:
-        tmp.write(code.encode("utf-8"))
-        tmp_path = Path(tmp.name)
+    # Build the prompt for the agent
+    system_prompt = """You are an expert Python debugger. Your task is to fix bugs in Python code.
 
-    # Detect unused imports from issues
-    unused_import_lines = set()
-    for issue in issues:
-        if issue.get("symbol") == "unused-import":
-            unused_import_lines.add(issue.get("line"))
+RULES:
+1. Analyze the code, test failures, and pylint issues carefully
+2. Fix ALL logical bugs, not just syntax issues
+3. Return ONLY the fixed Python code, wrapped in ```python ``` code blocks
+4. Do NOT add explanations outside the code block
+5. Keep the same function signatures and docstrings
+6. Fix common bugs like:
+   - Off-by-one errors in loops (range should be inclusive when needed)
+   - Wrong comparison operators (== vs !=, < vs <=)
+   - Mutable default arguments (use None instead of [] or {})
+   - Division errors (check divisor, use correct length)
+   - Return value logic errors
+   - Early returns that skip iterations
+   - Incorrect initialization values (e.g., 0 for max when values can be negative)
+"""
 
-    # If no unused imports, return code as is
-    if not unused_import_lines:
-        os.unlink(tmp_path)
+    user_prompt = f"""## BUGGY CODE:
+```python
+{code}
+```
+
+## TEST FILE (tests that should pass after fixing):
+```python
+{test_content}
+```
+
+## ANALYSIS REPORT:
+{pylint_report}
+
+Fix all the bugs in the code so that the tests pass. Return only the fixed code.
+"""
+
+    try:
+        # Call Mistral Agent to fix the code
+        response = _chat(system_prompt, user_prompt)
+        fixed_code = _extract_code_from_response(response)
+        
+        # Validate we got actual code back
+        if not fixed_code or len(fixed_code) < 10:
+            log_experiment(
+                agent_name="Fixer",
+                model_used=MISTRAL_AGENT_ID,
+                action=ActionType.FIX,
+                details={
+                    "input_prompt": f"Fixing code ({len(code)} chars)",
+                    "output_response": "Agent returned empty or invalid code"
+                },
+                status="FAILURE"
+            )
+            return {"code_content": code}
+        
         log_experiment(
             agent_name="Fixer",
-            model_used="auto-fixer",
+            model_used=MISTRAL_AGENT_ID,
             action=ActionType.FIX,
             details={
-                "input_prompt": f"Attempting to fix {len(issues)} issues",
-                "output_response": "No unused imports to fix. Code returned unchanged."
+                "input_prompt": f"Fixing code ({len(code)} chars) with {len(test_content)} chars of tests",
+                "output_response": f"Generated fixed code ({len(fixed_code)} chars)"
             },
             status="SUCCESS"
         )
-        return code
-
-    # Read code lines
-    result = read_file(tmp_path, sandbox)
-    if not result.success:
-        os.unlink(tmp_path)
+        
+        return {"code_content": fixed_code}
+        
+    except Exception as e:
         log_experiment(
             agent_name="Fixer",
-            model_used="auto-fixer",
+            model_used=MISTRAL_AGENT_ID,
             action=ActionType.FIX,
             details={
-                "input_prompt": f"Attempting to fix {len(issues)} issues",
-                "output_response": f"Failed to read file: {result.error}"
+                "input_prompt": f"Fixing code ({len(code)} chars)",
+                "output_response": f"Error: {str(e)}"
             },
             status="FAILURE"
         )
-        return code
-    lines = result.content.splitlines()
-
-    # Remove lines with unused imports
-    fixed_lines = [line for idx, line in enumerate(lines, 1) if idx not in unused_import_lines]
-    fixed_code = "\n".join(fixed_lines)
-
-    os.unlink(tmp_path)
-    
-    log_experiment(
-        agent_name="Fixer",
-        model_used="auto-fixer",
-        action=ActionType.FIX,
-        details={
-            "input_prompt": f"Removing {len(unused_import_lines)} unused import(s) from lines {sorted(unused_import_lines)}",
-            "output_response": f"Successfully removed unused imports. Fixed code length: {len(fixed_code)} chars"
-        },
-        status="SUCCESS"
-    )
-    
-    return fixed_code
+        return {"code_content": code}
 
 
-def judge_agent(original_code: str, fixed_code: str, task_description: str) -> dict:
+def judge_agent(state: dict) -> dict:
     """
-    Evaluates the fixed code using static analysis and testing tools.
+    Evaluates the fixed code by running tests and static analysis.
+    LangGraph node function - receives and returns state dict.
     """
-    import tempfile
-    from pathlib import Path
-    from src.tools import initialize_sandbox
+    # Extract from state
+    fixed_code = state.get("code_content", "")
+    target_file = state.get("target_file", "")
+    test_file = state.get("test_file", "")
+    task_description = state.get("task_description", "Evaluate fixed code")
 
     sandbox = initialize_sandbox("./sandbox")
-    # Write fixed code to temp file
+    
+    # Write fixed code to the actual target file (so tests can import it)
+    if target_file:
+        try:
+            with open(target_file, "w") as f:
+                f.write(fixed_code)
+        except Exception as e:
+            print(f"WARNING: Could not write to {target_file}: {e}")
+
+    # Run tests
+    test_passed = False
+    test_output = ""
+    
+    if test_file and os.path.exists(test_file):
+        test_result = run_pytest(Path(test_file), sandbox)
+        test_passed = test_result.all_tests_passed if test_result.success else False
+        
+        # Build test output summary
+        if test_result.success:
+            test_output = f"Stats: {test_result.stats}"
+            if test_result.failed_tests:
+                failed_names = [ft.test_name for ft in test_result.failed_tests]
+                test_output += f" | Failed: {failed_names}"
+        else:
+            test_output = test_result.error or "Test execution failed"
+    
+    # Run pylint on fixed code
     with tempfile.NamedTemporaryFile(delete=False, suffix=".py", dir="./sandbox") as tmp:
         tmp.write(fixed_code.encode("utf-8"))
         tmp_path = Path(tmp.name)
-
+    
     analysis = run_pylint(tmp_path, sandbox)
-    os.unlink(tmp_path)
+    
+    # Clean up temp file
+    try:
+        os.unlink(tmp_path)
+    except:
+        pass
+    
+    # Build result
+    pylint_issues = []
+    if analysis.success and analysis.issues:
+        pylint_issues = [issue.to_dict() for issue in analysis.issues]
     
     result = {
-        "score": analysis.score,
-        "issues": [issue.to_dict() for issue in analysis.issues],
-        "success": analysis.success,
-        "error": analysis.error,
-        "metadata": analysis.metadata,
+        "score": analysis.score if analysis.success else 0.0,
+        "issues": pylint_issues,
+        "test_passed": test_passed,
+        "test_output": test_output[:500],  # Truncate for logging
     }
+    
+    # Success if tests pass OR we've hit max iterations
+    iteration = state.get("iteration", 0)
+    is_success = test_passed or iteration >= 5
+    
+    status_msg = "TESTS PASSED ✅" if test_passed else f"TESTS FAILED (iteration {iteration}/5)"
     
     log_experiment(
         agent_name="Judge",
-        model_used="pylint",
+        model_used=f"pylint+pytest (Agent: {MISTRAL_AGENT_ID})",
         action=ActionType.DEBUG,
         details={
             "input_prompt": f"Evaluating fixed code for task: {task_description}",
-            "output_response": f"Final score: {result['score']}, Issues remaining: {len(result['issues'])}"
+            "output_response": f"{status_msg}. Pylint score: {result['score']}, Issues: {len(result['issues'])}"
         },
-        status="SUCCESS" if result["success"] else "FAILURE"
+        status="SUCCESS" if test_passed else "FAILURE"
     )
     
-    return result
+    return {
+        "test_report": str(result),
+        "is_success": is_success
+    }

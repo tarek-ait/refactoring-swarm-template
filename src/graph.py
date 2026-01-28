@@ -2,13 +2,14 @@ from langgraph.graph import StateGraph, END
 from .state import SwarmState
 from .agents import auditor_agent, fixer_agent, judge_agent
 
-def router(state):
-    if state["is_success"]:
-        return END
-    if state["iteration"] > 5: # Specified safety limit
+def router(state: dict) -> str:
+    """Decide whether to continue or end the workflow."""
+    if state.get("is_success", False):
+        return "end"
+    if state.get("iteration", 0) > 5:  # Specified safety limit
         print("ATTENTION: Max iterations reached. Stopping.")
-        return END
-    return "auditor" # Looping back to start
+        return "end"
+    return "auditor"  # Looping back to start
 
 # Init Graph Definition
 workflow = StateGraph(SwarmState)
@@ -26,7 +27,7 @@ workflow.add_conditional_edges(
     "judge",
     router,
     {
-        END: END,
+        "end": END,       # String key maps to END constant
         "auditor": "auditor"
     }
 )

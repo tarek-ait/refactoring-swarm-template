@@ -68,7 +68,7 @@ from .analyzer import (
     AnalysisResult,
     Issue,
     run_pylint,
-    get_quality_score
+    get_quality_score,
 )
 
 # ============================================================================
@@ -138,6 +138,7 @@ __all__ = [
     'Issue',
     'run_pylint',
     'get_quality_score',
+    'extract_issues',  # Add this
     
     # Testing (Pytest)
     'PytestRunner',

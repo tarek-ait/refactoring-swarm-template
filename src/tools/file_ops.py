@@ -80,7 +80,7 @@ class FileOperations:
         self._sandbox = sandbox
     
     def read_file(self, filepath: Union[str, Path], 
-                  encoding: str = "utf-8") -> FileOperationResult:
+                encoding: str = "utf-8") -> FileOperationResult:
         """Read a file safely with encoding handling.
         
         This method:
