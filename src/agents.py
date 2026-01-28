@@ -8,6 +8,7 @@ from src.tools import (
     get_quality_score,
     run_pytest,
 )
+from src.utils.logger import log_experiment, ActionType
 
 # Load environment variables
 load_dotenv()
@@ -50,13 +51,28 @@ def auditor_agent(code: str, task_description: str) -> dict:
 
     analysis = run_pylint(tmp_path, sandbox)
     os.unlink(tmp_path)
-    return {
+    
+    # Log the auditor action
+    result = {
         "issues": [issue.to_dict() for issue in analysis.issues],
         "score": analysis.score,
         "success": analysis.success,
         "error": analysis.error,
         "metadata": analysis.metadata,
     }
+    
+    log_experiment(
+        agent_name="Auditor",
+        model_used="pylint",
+        action=ActionType.ANALYSIS,
+        details={
+            "input_prompt": f"Analyzing code for task: {task_description}",
+            "output_response": f"Found {len(result['issues'])} issues. Score: {result['score']}"
+        },
+        status="SUCCESS" if result["success"] else "FAILURE"
+    )
+    
+    return result
 
 
 def fixer_agent(code: str, issues: list) -> str:
@@ -66,7 +82,7 @@ def fixer_agent(code: str, issues: list) -> str:
     """
     import tempfile
     from pathlib import Path
-    from src.tools import initialize_sandbox, extract_imports, read_file, write_file
+    from src.tools import initialize_sandbox, read_file, write_file
 
     sandbox = initialize_sandbox("./sandbox")
     # Write code to temp file in sandbox
@@ -83,12 +99,32 @@ def fixer_agent(code: str, issues: list) -> str:
     # If no unused imports, return code as is
     if not unused_import_lines:
         os.unlink(tmp_path)
+        log_experiment(
+            agent_name="Fixer",
+            model_used="auto-fixer",
+            action=ActionType.FIX,
+            details={
+                "input_prompt": f"Attempting to fix {len(issues)} issues",
+                "output_response": "No unused imports to fix. Code returned unchanged."
+            },
+            status="SUCCESS"
+        )
         return code
 
     # Read code lines
     result = read_file(tmp_path, sandbox)
     if not result.success:
         os.unlink(tmp_path)
+        log_experiment(
+            agent_name="Fixer",
+            model_used="auto-fixer",
+            action=ActionType.FIX,
+            details={
+                "input_prompt": f"Attempting to fix {len(issues)} issues",
+                "output_response": f"Failed to read file: {result.error}"
+            },
+            status="FAILURE"
+        )
         return code
     lines = result.content.splitlines()
 
@@ -97,6 +133,18 @@ def fixer_agent(code: str, issues: list) -> str:
     fixed_code = "\n".join(fixed_lines)
 
     os.unlink(tmp_path)
+    
+    log_experiment(
+        agent_name="Fixer",
+        model_used="auto-fixer",
+        action=ActionType.FIX,
+        details={
+            "input_prompt": f"Removing {len(unused_import_lines)} unused import(s) from lines {sorted(unused_import_lines)}",
+            "output_response": f"Successfully removed unused imports. Fixed code length: {len(fixed_code)} chars"
+        },
+        status="SUCCESS"
+    )
+    
     return fixed_code
 
 
@@ -116,10 +164,24 @@ def judge_agent(original_code: str, fixed_code: str, task_description: str) -> d
 
     analysis = run_pylint(tmp_path, sandbox)
     os.unlink(tmp_path)
-    return {
+    
+    result = {
         "score": analysis.score,
         "issues": [issue.to_dict() for issue in analysis.issues],
         "success": analysis.success,
         "error": analysis.error,
         "metadata": analysis.metadata,
     }
+    
+    log_experiment(
+        agent_name="Judge",
+        model_used="pylint",
+        action=ActionType.DEBUG,
+        details={
+            "input_prompt": f"Evaluating fixed code for task: {task_description}",
+            "output_response": f"Final score: {result['score']}, Issues remaining: {len(result['issues'])}"
+        },
+        status="SUCCESS" if result["success"] else "FAILURE"
+    )
+    
+    return result
