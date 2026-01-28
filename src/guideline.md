@@ -6,7 +6,7 @@ The `src/` directory contains all core application logic for the refactoring swa
 
 ## Organization Rules
 
-### Root Level (`src/`)
+### Root Level (`src/`) 
 
 Place the following directly in `src/`:
 
