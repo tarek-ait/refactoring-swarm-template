@@ -8,3 +8,4 @@ class SwarmState(TypedDict):
     test_report: str        # Output from the judge agent
     iteration: int          # Loop counter
     is_success: bool        # Flag to stop the swarm
+    task_description: Optional[str]  # Description of the task (optional)
