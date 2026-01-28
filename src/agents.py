@@ -7,7 +7,6 @@ from src.tools import (
     run_pylint,
     get_quality_score,
     run_pytest,
-    get_test_status
 )
 
 # Load environment variables
@@ -62,11 +61,43 @@ def auditor_agent(code: str, task_description: str) -> dict:
 
 def fixer_agent(code: str, issues: list) -> str:
     """
-    This agent is now a placeholder, as automated fixing is not implemented in tools.
-    Returns the original code unchanged.
+    Attempts to auto-fix code using tools in the tools folder.
+    Currently removes unused imports if detected by issues.
     """
-    # In a real system, you could implement auto-fixes using analysis results.
-    return code
+    import tempfile
+    from pathlib import Path
+    from src.tools import initialize_sandbox, extract_imports, read_file, write_file
+
+    sandbox = initialize_sandbox("./sandbox")
+    # Write code to temp file in sandbox
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".py", dir="./sandbox") as tmp:
+        tmp.write(code.encode("utf-8"))
+        tmp_path = Path(tmp.name)
+
+    # Detect unused imports from issues
+    unused_import_lines = set()
+    for issue in issues:
+        if issue.get("symbol") == "unused-import":
+            unused_import_lines.add(issue.get("line"))
+
+    # If no unused imports, return code as is
+    if not unused_import_lines:
+        os.unlink(tmp_path)
+        return code
+
+    # Read code lines
+    result = read_file(tmp_path, sandbox)
+    if not result.success:
+        os.unlink(tmp_path)
+        return code
+    lines = result.content.splitlines()
+
+    # Remove lines with unused imports
+    fixed_lines = [line for idx, line in enumerate(lines, 1) if idx not in unused_import_lines]
+    fixed_code = "\n".join(fixed_lines)
+
+    os.unlink(tmp_path)
+    return fixed_code
 
 
 def judge_agent(original_code: str, fixed_code: str, task_description: str) -> dict:
@@ -84,7 +115,6 @@ def judge_agent(original_code: str, fixed_code: str, task_description: str) -> d
         tmp_path = Path(tmp.name)
 
     analysis = run_pylint(tmp_path, sandbox)
-    # Optionally, run tests if available (not implemented here)
     os.unlink(tmp_path)
     return {
         "score": analysis.score,
