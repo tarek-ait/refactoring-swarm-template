@@ -114,7 +114,7 @@ class AnalysisError(ToolError):
     """
     
     def __init__(self, message: str, tool: Optional[str] = None, 
-                 command: Optional[str] = None):
+                command: Optional[str] = None):
         """Initialize AnalysisError.
         
         Args:

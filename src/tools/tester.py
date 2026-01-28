@@ -362,8 +362,8 @@ class PytestRunner:
 
 # Module-level convenience function
 def run_pytest(test_path: Union[str, Path],
-               sandbox: Optional[SandboxManager] = None,
-               timeout: int = 60) -> TestResult:
+            sandbox: Optional[SandboxManager] = None,
+            timeout: int = 60) -> TestResult:
     """Convenience function to run Pytest.
     
     Args:

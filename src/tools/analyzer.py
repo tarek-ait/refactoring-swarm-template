@@ -135,7 +135,7 @@ class PylintAnalyzer:
     }
     
     def __init__(self, sandbox: SandboxManager, timeout: int = 30,
-                 config_file: Optional[str] = None):
+                config_file: Optional[str] = None):
         """Initialize PylintAnalyzer.
         
         Args:
@@ -340,7 +340,7 @@ class PylintAnalyzer:
         return counts
     
     def compare_scores(self, before: AnalysisResult, 
-                      after: AnalysisResult) -> dict:
+                    after: AnalysisResult) -> dict:
         """Compare two analysis results.
         
         Args:
@@ -367,8 +367,8 @@ class PylintAnalyzer:
 
 # Module-level convenience function
 def run_pylint(filepath: Union[str, Path], 
-               sandbox: Optional[SandboxManager] = None,
-               timeout: int = 30) -> AnalysisResult:
+            sandbox: Optional[SandboxManager] = None,
+            timeout: int = 30) -> AnalysisResult:
     """Convenience function to run Pylint analysis.
     
     Args:
@@ -391,7 +391,7 @@ def run_pylint(filepath: Union[str, Path],
 
 
 def get_quality_score(filepath: Union[str, Path],
-                      sandbox: Optional[SandboxManager] = None) -> float:
+                    sandbox: Optional[SandboxManager] = None) -> float:
     """Get just the quality score (convenience function).
     
     Args:

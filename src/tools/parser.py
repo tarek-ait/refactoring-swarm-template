@@ -473,7 +473,7 @@ def extract_functions(filepath: Union[str, Path],
 
 
 def extract_classes(filepath: Union[str, Path],
-                   sandbox: Optional[SandboxManager] = None) -> List[ClassInfo]:
+                sandbox: Optional[SandboxManager] = None) -> List[ClassInfo]:
     """Convenience function to extract classes.
     
     Args:
@@ -490,7 +490,7 @@ def extract_classes(filepath: Union[str, Path],
 
 
 def get_imports(filepath: Union[str, Path],
-               sandbox: Optional[SandboxManager] = None) -> List[str]:
+            sandbox: Optional[SandboxManager] = None) -> List[str]:
     """Get list of imported module names (convenience function).
     
     Args:
