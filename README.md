@@ -16,7 +16,7 @@ The system iterates up to 5 times until all tests pass or the iteration limit is
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         main.py                                  │
+│                         main.py                                 │
 │  - CLI entry point (--target_dir)                               │
 │  - Backup management (sandbox/backup/)                          │
 │  - Iteration tracking & progress display                        │
