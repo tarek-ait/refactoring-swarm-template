@@ -16,7 +16,8 @@ venv/
 
 # Sandbox contains versioned buggy code used as internal test dataset
 # Required by the Refactoring Swarm architecture
-# sandbox/
+
+sandbox/
 
 # LOGS : On ignore tout le dossier logs...
 logs/*
