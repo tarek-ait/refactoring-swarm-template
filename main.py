@@ -44,7 +44,8 @@ def main():
     python_files = glob.glob(os.path.join(target_dir, "*.py"))
     
     for py_file in python_files:
-        if "test" in py_file: 
+        basename = os.path.basename(py_file)
+        if basename.startswith("test_") or basename == "tests.py": 
             continue  # Skipping test files themselves
         
         test_file = os.path.join(os.path.dirname(py_file), "test_" + os.path.basename(py_file))
