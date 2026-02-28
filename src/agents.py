@@ -19,10 +19,10 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 MISTRAL_AGENT_ID = os.getenv("MISTRAL_MODEL")  # This is actually the Agent ID
 
 if not MISTRAL_API_KEY:
-    raise ValueError("❌ Missing MISTRAL_API_KEY in .env")
+    raise ValueError("Missing MISTRAL_API_KEY in .env")
 
 if not MISTRAL_AGENT_ID:
-    raise ValueError("❌ Missing MISTRAL_MODEL (Agent ID) in .env")
+    raise ValueError("Missing MISTRAL_MODEL (Agent ID) in .env")
 
 # Initialize Mistral client
 client = Mistral(api_key=MISTRAL_API_KEY)
@@ -88,7 +88,7 @@ def auditor_agent(state: dict) -> dict:
     # Run tests to find logical bugs
     test_result = None
     if test_file and os.path.exists(test_file):
-        test_result = run_pytest(Path(test_file), sandbox)
+        test_result = run_pytest(Path(test_file).resolve(), sandbox)
     
     # Clean up temp file
     try:
@@ -132,16 +132,33 @@ def auditor_agent(state: dict) -> dict:
     else:
         test_status = "FAILED"
     
+    # Build detailed error summary for logging and terminal output
+    pylint_summary = "; ".join(
+        [f"L{i.get('line','?')}: {i.get('message','?')}" for i in pylint_issues[:5]]
+    ) if pylint_issues else "none"
+
     log_experiment(
         agent_name="Auditor",
         model_used=f"pylint+pytest (Agent: {MISTRAL_AGENT_ID})",
         action=ActionType.ANALYSIS,
         details={
             "input_prompt": f"Analyzing code for task: {task_description}",
-            "output_response": f"Pylint: {len(pylint_issues)} issues, score: {analysis.score}. Tests: {test_status}"
+            "output_response": f"Pylint: {len(pylint_issues)} issues, score: {analysis.score}. Tests: {test_status}",
+            "pylint_issues": pylint_summary,
+            "test_errors": test_errors[:500] if test_errors else "none",
+            "pylint_score": analysis.score if analysis.success else 0.0,
         },
         status="SUCCESS" if analysis.success else "FAILURE"
     )
+
+    # ANSI colors (inline to avoid import dependency)
+    _RED = "\033[91m"; _YELLOW = "\033[93m"; _DIM = "\033[2m"; _RESET = "\033[0m"
+    # Print errors to terminal so user can see what's wrong
+    if pylint_issues:
+        print(f"    {_YELLOW}⚑  Pylint ({len(pylint_issues)} issues): {pylint_summary[:120]}{_RESET}")
+    if test_errors:
+        for line in test_errors.splitlines()[:5]:
+            print(f"    {_RED}{line}{_RESET}")
     
     # Return state update
     return {
@@ -276,7 +293,7 @@ def judge_agent(state: dict) -> dict:
     test_output = ""
     
     if test_file and os.path.exists(test_file):
-        test_result = run_pytest(Path(test_file), sandbox)
+        test_result = run_pytest(Path(test_file).resolve(), sandbox)
         test_passed = test_result.all_tests_passed if test_result.success else False
         
         # Build test output summary
@@ -317,15 +334,19 @@ def judge_agent(state: dict) -> dict:
     iteration = state.get("iteration", 0)
     is_success = test_passed or iteration >= 5
     
-    status_msg = "TESTS PASSED ✅" if test_passed else f"TESTS FAILED (iteration {iteration}/5)"
+    status_msg = "TESTS PASSED" if test_passed else f"TESTS FAILED (iteration {iteration}/5)"
     
+    failed_summary = ", ".join([ft.test_name for ft in (test_result.failed_tests if test_result and test_result.failed_tests else [])]) or "none"
+
     log_experiment(
         agent_name="Judge",
         model_used=f"pylint+pytest (Agent: {MISTRAL_AGENT_ID})",
         action=ActionType.DEBUG,
         details={
             "input_prompt": f"Evaluating fixed code for task: {task_description}",
-            "output_response": f"{status_msg}. Pylint score: {result['score']}, Issues: {len(result['issues'])}"
+            "output_response": f"{status_msg}. Pylint score: {result['score']}, Issues: {len(result['issues'])}",
+            "failed_tests": failed_summary,
+            "test_output": result['test_output'],
         },
         status="SUCCESS" if test_passed else "FAILURE"
     )

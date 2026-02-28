@@ -6,6 +6,19 @@ import shutil
 from datetime import datetime
 from dotenv import load_dotenv
 
+# ── ANSI Colors ────────────────────────────────────────────────
+RESET   = "\033[0m"
+BOLD    = "\033[1m"
+DIM     = "\033[2m"
+RED     = "\033[91m"
+GREEN   = "\033[92m"
+YELLOW  = "\033[93m"
+BLUE    = "\033[94m"
+MAGENTA = "\033[95m"
+CYAN    = "\033[96m"
+WHITE   = "\033[97m"
+# ───────────────────────────────────────────────────────────────
+
 # Loading .env first
 load_dotenv()
 
@@ -21,7 +34,7 @@ def main():
 
     target_dir = args.target_dir
     if not os.path.exists(target_dir):
-        print(f"ERROR: Dossier {target_dir} introuvable.")
+        print(f"{BOLD}{RED}ERROR:{RESET} Dossier {target_dir} introuvable.")
         sys.exit(1)
 
     # Create backup folder within sandbox
@@ -31,7 +44,9 @@ def main():
     # Initialize sandbox BEFORE any file operations
     sandbox = initialize_sandbox(target_dir)
 
-    print(f"LAUNCHING: DEMARRAGE SUR : {target_dir}")
+    print(f"\n{BOLD}{CYAN}{'━'*60}{RESET}")
+    print(f"{BOLD}{CYAN}  REFACTORING SWARM  ->  {target_dir}{RESET}")
+    print(f"{BOLD}{CYAN}{'━'*60}{RESET}\n")
     log_experiment(
         "System",
         "System",
@@ -53,17 +68,18 @@ def main():
             test_file = os.path.join(os.path.dirname(py_file), "tests.py")
         
         if not os.path.exists(test_file):
-            print(f"ATTENTION: No test found for {py_file}. Skipping.")
+            print(f"{YELLOW}WARNING: No test found for {BOLD}{py_file}{RESET}{YELLOW}. Skipping.{RESET}")
             continue
 
-        print(f"\nON-GOING: Processing Pair: {py_file} + {test_file}")
+        print(f"\n{BOLD}{BLUE}┌─ Processing:{RESET} {WHITE}{py_file}{RESET}")
+        print(f"{BOLD}{BLUE}└─ Tests:     {RESET} {WHITE}{test_file}{RESET}")
 
         # Read file content directly
         try:
             with open(py_file, "r") as f:
                 code_content = f.read()
         except Exception as e:
-            print(f"ERROR: Could not read {py_file}: {e}")
+            print(f"{RED}ERROR: Could not read {py_file}: {e}{RESET}")
             continue
 
         # Create backup before processing
@@ -71,7 +87,7 @@ def main():
         backup_filename = f"{os.path.basename(py_file)}.{timestamp}.bak"
         backup_path = os.path.join(backup_dir, backup_filename)
         shutil.copy(py_file, backup_path)
-        print(f"  Backup created: {backup_path}")
+        print(f"  {DIM}Backup -> {backup_path}{RESET}")
 
         original_hash = hash(code_content)
 
@@ -102,23 +118,25 @@ def main():
                         
                         # Log iteration progress
                         if "iteration" in node_state:
-                            print(f"  ↳ Iteration {final_state.get('iteration', 0)}/5")
+                            it = final_state.get('iteration', 0)
+                            bar = ("█" * it) + ("░" * (5 - it))
+                            print(f"  {BOLD}{MAGENTA}↳ Iteration {it}/5{RESET}  {MAGENTA}{bar}{RESET}")
                         
                         # DEBUG: Show if code changed after fixer
                         if node_name == "fixer" and "code_content" in node_state:
                             new_hash = hash(node_state["code_content"])
                             if new_hash != original_hash:
-                                print(f"    Fixer modified code")
+                                print(f"    {YELLOW}Fixer modified code{RESET}")
                             else:
-                                print(f"    Fixer returned same code")
+                                print(f"    {DIM}Fixer returned same code{RESET}")
                 
                 # Check if we should stop
                 if final_state.get("is_success"):
                     test_report = str(final_state.get("test_report", ""))
                     if "'test_passed': True" in test_report:
-                        print(f"  Tests passed!")
+                        print(f"  {BOLD}{GREEN}Tests passed!{RESET}")
                     else:
-                        print(f"  Max iterations reached, tests may still fail")
+                        print(f"  {YELLOW}Max iterations reached, tests may still fail{RESET}")
                     break
             
             # Write the final fixed code back to the file
@@ -127,14 +145,27 @@ def main():
             if fixed_code and fixed_code.strip() != code_content.strip():
                 with open(py_file, "w") as f:
                     f.write(fixed_code)
-                print(f"  Written fixed code to {py_file}")
+                print(f"  {CYAN}Written fixed code -> {py_file}{RESET}")
+                # Show a compact diff of what changed
+                import difflib
+                original_lines = code_content.splitlines(keepends=True)
+                fixed_lines = fixed_code.splitlines(keepends=True)
+                diff = list(difflib.unified_diff(original_lines, fixed_lines, lineterm=""))
+                changed = [l for l in diff if l.startswith(("+", "-")) and not l.startswith(("++", "--"))]
+                if changed:
+                    print(f"  {BOLD}Changes ({len(changed)} lines):{RESET}")
+                    for line in changed[:20]:
+                        if line.startswith("+"):
+                            print(f"  {GREEN}  + {line[1:].rstrip()}{RESET}")
+                        else:
+                            print(f"  {RED}  - {line[1:].rstrip()}{RESET}")
             else:
-                print(f"  No changes made to {py_file}")
+                print(f"  {DIM}  No changes made to {py_file}{RESET}")
             
-            print(f"SUCCESS: Finished processing {py_file}")
+            print(f"\n{BOLD}{GREEN}SUCCESS:{RESET} Finished processing {WHITE}{py_file}{RESET}")
             
         except Exception as e:
-            print(f"ERROR: Critical Error on {py_file}: {e}")
+            print(f"{BOLD}{RED}ERROR: Critical Error on {py_file}: {e}{RESET}")
             import traceback
             traceback.print_exc()
             log_experiment(
@@ -145,7 +176,9 @@ def main():
                 "FAILURE"
             )
 
-    print("MISSION_COMPLETE")
+    print(f"\n{BOLD}{GREEN}{'━'*60}{RESET}")
+    print(f"{BOLD}{GREEN}  MISSION COMPLETE{RESET}")
+    print(f"{BOLD}{GREEN}{'━'*60}{RESET}\n")
 
 if __name__ == "__main__":
     main()
